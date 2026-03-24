@@ -9,6 +9,7 @@ import anthropic
 import config
 import data as market_data
 from broker import IBBroker
+from performance import PerformanceTracker
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,16 @@ TOOLS = [
             "required": ["order_id"],
         },
     },
+    {
+        "name": "get_performance_report",
+        "description": (
+            "Get a full performance report showing realized and unrealized P&L, "
+            "win rate, total return %, best/worst trade, and P&L broken down by symbol. "
+            "Call this at the start of a cycle to assess your own track record before "
+            "making new decisions."
+        ),
+        "input_schema": {"type": "object", "properties": {}},
+    },
 ]
 
 
@@ -132,13 +143,15 @@ When you are done making all decisions and have executed all intended orders, st
 
 
 class TradingAgent:
-    def __init__(self, broker: IBBroker):
+    def __init__(self, broker: IBBroker, tracker: PerformanceTracker):
         self.broker = broker
+        self.tracker = tracker
         self.client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
     def run_cycle(self):
         """Run one full agent decision cycle."""
         logger.info("--- Starting agent cycle ---")
+        self.tracker.log_startup_summary()
 
         if config.PAPER_TRADING:
             mode_label = "PAPER TRADING (simulated)"
@@ -233,19 +246,33 @@ class TradingAgent:
             elif name == "get_news":
                 return market_data.get_news(inputs["symbol"])
             elif name == "get_portfolio":
-                return self.broker.get_portfolio()
+                portfolio = self.broker.get_portfolio()
+                self.tracker.record_snapshot(portfolio)
+                return portfolio
             elif name == "get_open_orders":
                 return self.broker.get_open_orders()
             elif name == "place_order":
-                return self.broker.place_order(
+                result = self.broker.place_order(
                     symbol=inputs["symbol"],
                     action=inputs["action"],
                     quantity=int(inputs["quantity"]),
                     order_type=inputs["order_type"],
                     limit_price=inputs.get("limit_price"),
                 )
+                if "error" not in result:
+                    self.tracker.record_trade(
+                        symbol=inputs["symbol"],
+                        action=inputs["action"],
+                        quantity=int(inputs["quantity"]),
+                        order_type=inputs["order_type"],
+                        limit_price=inputs.get("limit_price"),
+                        order_id=result["order_id"],
+                    )
+                return result
             elif name == "cancel_order":
                 return self.broker.cancel_order(int(inputs["order_id"]))
+            elif name == "get_performance_report":
+                return self.tracker.get_performance_report(portfolio=None)
             else:
                 return {"error": f"Unknown tool: {name}"}
         except Exception as e:

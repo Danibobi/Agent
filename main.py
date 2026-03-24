@@ -7,6 +7,7 @@ import sys
 import config
 from broker import IBBroker
 from agent import TradingAgent
+from performance import PerformanceTracker
 
 logging.basicConfig(
     level=logging.INFO,
@@ -28,7 +29,8 @@ def main():
     broker = IBBroker()
     broker.connect()
 
-    agent = TradingAgent(broker)
+    tracker = PerformanceTracker()
+    agent = TradingAgent(broker, tracker)
 
     try:
         while True:
