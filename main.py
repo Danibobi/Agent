@@ -1,6 +1,7 @@
 """Entry point: runs the trading agent on a configurable interval."""
 
 import logging
+import logging.handlers
 import time
 import sys
 
@@ -9,12 +10,16 @@ from broker import IBBroker
 from agent import TradingAgent
 from performance import PerformanceTracker
 
+_rot = logging.handlers.RotatingFileHandler(
+    "trading_agent.log", maxBytes=10 * 1024 * 1024, backupCount=7
+)
+_rot.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("trading_agent.log"),
+        _rot,
     ],
 )
 logger = logging.getLogger(__name__)
@@ -22,6 +27,7 @@ logger = logging.getLogger(__name__)
 
 def main():
     logger.info("Initialising trading agent")
+    logger.info("Log files: trading_agent.log | daily_log.json | trade_journal.json")
     logger.info(f"Watchlist: {config.WATCH_LIST}")
     logger.info(f"IB connection: {config.IB_HOST}:{config.IB_PORT}")
     logger.info(f"Cycle interval: {config.AGENT_INTERVAL_SECONDS}s")

@@ -1,0 +1,41 @@
+# systemd service unit for the Claude Trading Agent
+#
+# Installation (run as root or with sudo):
+#   sudo cp trading_agent.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable trading_agent   # auto-start on boot
+#   sudo systemctl start trading_agent    # start now
+#
+# Useful commands:
+#   sudo systemctl status trading_agent   # check if running
+#   journalctl -u trading_agent -f        # live log stream
+#   sudo systemctl stop trading_agent     # stop the agent
+#   sudo systemctl restart trading_agent  # restart after config changes
+#
+# Edit User and WorkingDirectory to match your machine before installing.
+
+[Unit]
+Description=Claude Trading Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# --- Edit these two lines to match your setup ---
+User=ubuntu
+WorkingDirectory=/home/ubuntu/Agent
+# ------------------------------------------------
+
+EnvironmentFile=/home/ubuntu/Agent/.env
+ExecStart=/home/ubuntu/Agent/venv/bin/python main.py
+
+# Restart automatically if the process crashes.
+# RestartSec=30 gives IB Gateway time to recover before the agent reconnects.
+Restart=on-failure
+RestartSec=30
+
+# Send stdout/stderr to the systemd journal (view with journalctl).
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

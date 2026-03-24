@@ -1,0 +1,25 @@
+services:
+  trading-agent:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      # Persist logs and data files on the host so you can inspect them
+      # without entering the container.
+      - ./trading_agent.log:/app/trading_agent.log
+      - ./daily_log.json:/app/daily_log.json
+      - ./trade_journal.json:/app/trade_journal.json
+
+    # If IB Gateway runs on the host (not inside Docker), uncomment the two
+    # lines below and set IB_HOST=host-gateway in your .env file.
+    # extra_hosts:
+    #   - "host-gateway:host-gateway"
+
+# First-run tip: create empty files before starting so Docker doesn't turn
+# them into directories:
+#
+#   touch trading_agent.log daily_log.json trade_journal.json
+#   docker compose up -d
+#
+# View live logs:
+#   docker compose logs -f

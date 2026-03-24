@@ -7,9 +7,10 @@ exactly what Claude decided, what orders were placed, and how the portfolio
 moved — with no IB connection needed.
 
 Usage:
-    python show_activity.py           # today's activity
-    python show_activity.py --days 7  # last 7 days
-    python show_activity.py --all     # everything since launch
+    python show_activity.py                    # today's activity
+    python show_activity.py --days 7           # last 7 days
+    python show_activity.py --all              # everything since launch
+    python show_activity.py --date 2026-03-24  # specific date
 """
 
 import argparse
@@ -61,6 +62,8 @@ def main():
                        help="Show activity for the last N days (default: 1 = today)")
     group.add_argument("--all", action="store_true",
                        help="Show all activity since launch")
+    group.add_argument("--date", metavar="YYYY-MM-DD",
+                       help="Show activity for a specific date, e.g. --date 2026-03-24")
     args = parser.parse_args()
 
     log_data = _load_json(DAILY_LOG_FILE)
@@ -76,6 +79,17 @@ def main():
     if args.all:
         visible = cycles
         period_label = "ALL TIME"
+    elif args.date:
+        try:
+            target = datetime.strptime(args.date, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+        except ValueError:
+            print(f"  ERROR: Invalid date format '{args.date}'. Use YYYY-MM-DD.")
+            sys.exit(1)
+        day_start = target.replace(hour=0, minute=0, second=0)
+        day_end = target.replace(hour=23, minute=59, second=59)
+        visible = [c for c in cycles
+                   if day_start <= _parse_iso(c.get("timestamp", "")) <= day_end]
+        period_label = f"DATE  {args.date}"
     else:
         cutoff = datetime.now(timezone.utc) - timedelta(days=args.days)
         visible = [c for c in cycles if _parse_iso(c.get("timestamp", "")) >= cutoff]
