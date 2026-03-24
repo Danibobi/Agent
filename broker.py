@@ -1,7 +1,13 @@
 """Interactive Brokers integration via ib_insync."""
 
+import logging
 from ib_insync import IB, Stock, MarketOrder, LimitOrder, util
 import config
+
+logger = logging.getLogger(__name__)
+
+LIVE_PORT = 7496
+PAPER_PORT = 7497
 
 
 class IBBroker:
@@ -9,8 +15,21 @@ class IBBroker:
         self.ib = IB()
 
     def connect(self):
+        if config.PAPER_TRADING and config.IB_PORT == LIVE_PORT:
+            logger.warning("=" * 70)
+            logger.warning("WARNING: PAPER_TRADING=true but IB_PORT=%s (live trading port).", LIVE_PORT)
+            logger.warning("You may be connecting to a LIVE account with paper-trading mode set.")
+            logger.warning("Set IB_PORT=7497 in .env, or PAPER_TRADING=false to suppress this warning.")
+            logger.warning("=" * 70)
+        elif not config.PAPER_TRADING and config.IB_PORT == PAPER_PORT:
+            logger.warning("=" * 70)
+            logger.warning("WARNING: PAPER_TRADING=false but IB_PORT=%s (paper trading port).", PAPER_PORT)
+            logger.warning("Config claims live mode but you are connecting to a paper account.")
+            logger.warning("=" * 70)
+
         self.ib.connect(config.IB_HOST, config.IB_PORT, clientId=config.IB_CLIENT_ID)
-        print(f"Connected to IB on {config.IB_HOST}:{config.IB_PORT}")
+        mode_label = "PAPER TRADING" if config.PAPER_TRADING else "LIVE TRADING"
+        logger.info("Connected to IB on %s:%s [%s]", config.IB_HOST, config.IB_PORT, mode_label)
 
     def disconnect(self):
         self.ib.disconnect()

@@ -34,7 +34,13 @@ TOOLS = [
     },
     {
         "name": "get_news",
-        "description": "Get recent news headlines for a stock symbol to assess sentiment.",
+        "description": (
+            "Get recent news headlines for a stock symbol with pre-scored sentiment. "
+            "Each headline includes 'sentiment' (bullish/bearish/neutral) and 'sentiment_score' "
+            "(-1.0 = strongly bearish, +1.0 = strongly bullish). The response also includes a "
+            "'sentiment_summary' with headline counts and an 'overall_score' for the symbol. "
+            "Combine these signals with technical indicators before making a trading decision."
+        ),
         "input_schema": {
             "type": "object",
             "properties": {
@@ -93,13 +99,20 @@ TOOLS = [
 ]
 
 
-SYSTEM_PROMPT = """You are an autonomous stock trading agent managing a live brokerage account via Interactive Brokers.
+SYSTEM_PROMPT = """You are an autonomous stock trading agent managing a {mode_label} brokerage account via Interactive Brokers.
+
+{mode_instructions}
 
 Your responsibilities:
 1. Analyse the watchlist stocks using market data (price, volume, RSI, MACD, moving averages) and recent news
-2. Review the current portfolio and open orders
-3. Make rational, risk-managed trading decisions
-4. Execute trades when you have sufficient conviction
+2. Use the sentiment scores in the news data to gauge market mood for each stock:
+   - 'overall_score' near +1.0 = strongly bullish news environment
+   - 'overall_score' near -1.0 = strongly bearish news environment
+   - Combine sentiment with technicals: high RSI + bullish news = caution (overbought hype)
+   - Low RSI + bearish news = wait for stabilisation before buying
+3. Review the current portfolio and open orders
+4. Make rational, risk-managed trading decisions
+5. Execute trades when you have sufficient conviction across both technical and sentiment signals
 
 Risk management rules you MUST follow:
 - Never allocate more than {max_position_pct}% of total portfolio value to a single position
@@ -113,7 +126,7 @@ Risk management rules you MUST follow:
 Today's date: {date}
 Watchlist: {watchlist}
 
-Work through the watchlist systematically. For each stock: get market data, check news, then decide.
+Work through the watchlist systematically. For each stock: get market data, check news (note the sentiment scores), then decide.
 After reviewing all stocks, check the portfolio and manage existing positions if needed.
 When you are done making all decisions and have executed all intended orders, stop."""
 
@@ -126,7 +139,26 @@ class TradingAgent:
     def run_cycle(self):
         """Run one full agent decision cycle."""
         logger.info("--- Starting agent cycle ---")
+
+        if config.PAPER_TRADING:
+            mode_label = "PAPER TRADING (simulated)"
+            mode_instructions = (
+                "IMPORTANT: This is a PAPER TRADING session — no real money is at risk. "
+                "Use this environment to test strategies freely, explore different position sizes, "
+                "and experiment with entry/exit timing. Apply the same logic you would in live "
+                "trading, but act on moderate conviction rather than waiting only for the highest-"
+                "confidence setups."
+            )
+        else:
+            mode_label = "LIVE (real money)"
+            mode_instructions = (
+                "IMPORTANT: This is a LIVE trading session with real capital. "
+                "Apply strict risk management and only act on high-conviction signals."
+            )
+
         system = SYSTEM_PROMPT.format(
+            mode_label=mode_label,
+            mode_instructions=mode_instructions,
             max_position_pct=int(config.MAX_POSITION_SIZE_PCT * 100),
             date=datetime.now().strftime("%A, %B %d, %Y %H:%M"),
             watchlist=", ".join(config.WATCH_LIST),
