@@ -1,6 +1,7 @@
 """Interactive Brokers integration via ib_insync."""
 
 import logging
+import time
 from ib_insync import IB, Stock, MarketOrder, LimitOrder, util
 import config
 
@@ -89,7 +90,18 @@ class IBBroker:
             return {"error": f"Unknown order_type: {order_type}"}
 
         trade = self.ib.placeOrder(contract, order)
-        self.ib.sleep(1)  # allow IB to acknowledge
+
+        # Wait up to 10s for a fill (MKT orders and near-market LMT orders fill fast)
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            self.ib.sleep(0.5)
+            if trade.orderStatus.status == "Filled":
+                break
+
+        actual_fill = (
+            round(trade.fills[-1].execution.price, 2)
+            if trade.fills else None
+        )
 
         return {
             "order_id": trade.order.orderId,
@@ -99,6 +111,8 @@ class IBBroker:
             "order_type": order_type,
             "limit_price": limit_price,
             "status": trade.orderStatus.status,
+            "actual_fill_price": actual_fill,
+            "filled_quantity": int(trade.orderStatus.filled),
         }
 
     def cancel_order(self, order_id: int) -> dict:

@@ -12,6 +12,7 @@ import yfinance as yf
 logger = logging.getLogger(__name__)
 
 JOURNAL_FILE = "trade_journal.json"
+DAILY_LOG_FILE = "daily_log.json"
 
 
 def _now_iso() -> str:
@@ -67,12 +68,20 @@ class PerformanceTracker:
         order_type: str,
         limit_price: Optional[float],
         order_id: int,
+        actual_fill_price: Optional[float] = None,
     ) -> None:
         """
-        Record a placed order with an estimated fill price.
-        LMT orders use limit_price; MKT orders fetch the current yfinance price.
+        Record a placed order.
+
+        actual_fill_price: real IB fill price returned by broker.place_order().
+          When provided, fill_confirmed=True and P&L uses this price.
+          When absent, falls back to estimated price (LMT→limit_price, MKT→yfinance).
         """
-        if order_type == "LMT" and limit_price is not None:
+        fill_confirmed = actual_fill_price is not None
+
+        if fill_confirmed:
+            estimated_fill = actual_fill_price
+        elif order_type == "LMT" and limit_price is not None:
             estimated_fill = limit_price
         else:
             estimated_fill = _fetch_current_price(symbol)
@@ -89,12 +98,50 @@ class PerformanceTracker:
             "quantity": quantity,
             "order_type": order_type,
             "limit_price": limit_price,
-            "estimated_fill": estimated_fill,
+            "actual_fill_price": actual_fill_price,   # real IB price (None if not filled yet)
+            "estimated_fill": estimated_fill,          # best available price for P&L
+            "fill_confirmed": fill_confirmed,          # True = IB confirmed the fill
             "timestamp": _now_iso(),
         })
         _save_journal(self._data)
+        confirmed_str = "[CONFIRMED]" if fill_confirmed else "[estimated]"
         price_str = "N/A" if estimated_fill is None else f"{estimated_fill:.2f}"
-        logger.info("[Tracker] Recorded %s %dx%s @ %s", action, quantity, symbol, price_str)
+        logger.info("[Tracker] Recorded %s %dx%s @ %s %s",
+                    action, quantity, symbol, price_str, confirmed_str)
+
+    def record_cycle_log(self, decisions: list[str], orders_placed: list[dict]) -> None:
+        """
+        Write a structured entry to daily_log.json capturing what Claude
+        decided and what orders were placed this cycle.
+        Called once at the end of each run_cycle().
+        """
+        latest_snapshot = self._data["snapshots"][-1] if self._data["snapshots"] else None
+        entry = {
+            "timestamp": _now_iso(),
+            "claude_reasoning": decisions,
+            "orders_placed": orders_placed,
+            "portfolio_snapshot": latest_snapshot,
+        }
+
+        # Load existing daily log
+        if os.path.exists(DAILY_LOG_FILE):
+            try:
+                with open(DAILY_LOG_FILE) as f:
+                    log_data = json.load(f)
+            except (json.JSONDecodeError, OSError):
+                log_data = {"cycles": []}
+        else:
+            log_data = {"cycles": []}
+
+        log_data["cycles"].append(entry)
+
+        tmp = DAILY_LOG_FILE + ".tmp"
+        try:
+            with open(tmp, "w") as f:
+                json.dump(log_data, f, indent=2)
+            os.replace(tmp, DAILY_LOG_FILE)
+        except OSError as e:
+            logger.error("Failed to save daily log: %s", e)
 
     def record_snapshot(self, portfolio: dict) -> None:
         """Append a net-liquidation snapshot whenever get_portfolio is called."""

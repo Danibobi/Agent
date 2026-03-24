@@ -187,6 +187,10 @@ class TradingAgent:
             }
         ]
 
+        # Accumulators for the daily activity log
+        cycle_decisions: list[str] = []
+        cycle_orders: list[dict] = []
+
         # Agentic tool-use loop
         while True:
             response = self.client.messages.create(
@@ -203,6 +207,7 @@ class TradingAgent:
             for block in response.content:
                 if hasattr(block, "text"):
                     logger.info(f"Claude: {block.text}")
+                    cycle_decisions.append(block.text)
 
             # If no tool calls, we're done
             if response.stop_reason == "end_turn":
@@ -227,6 +232,19 @@ class TradingAgent:
                 result = self._dispatch_tool(tool_name, tool_input)
                 logger.info(f"Tool result: {json.dumps(result)}")
 
+                # Track placed orders for the activity log
+                if tool_name == "place_order" and "error" not in result:
+                    cycle_orders.append({
+                        "symbol": tool_input.get("symbol"),
+                        "action": tool_input.get("action"),
+                        "quantity": tool_input.get("quantity"),
+                        "order_type": tool_input.get("order_type"),
+                        "limit_price": tool_input.get("limit_price"),
+                        "status": result.get("status"),
+                        "actual_fill_price": result.get("actual_fill_price"),
+                        "order_id": result.get("order_id"),
+                    })
+
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -235,6 +253,8 @@ class TradingAgent:
 
             messages.append({"role": "user", "content": tool_results})
 
+        # Persist cycle activity to daily_log.json
+        self.tracker.record_cycle_log(cycle_decisions, cycle_orders)
         logger.info("--- Agent cycle complete ---")
 
     def _dispatch_tool(self, name: str, inputs: dict) -> dict:
@@ -259,7 +279,7 @@ class TradingAgent:
                     order_type=inputs["order_type"],
                     limit_price=inputs.get("limit_price"),
                 )
-                if "error" not in result:
+                if "error" not in result and result.get("status") != "Cancelled":
                     self.tracker.record_trade(
                         symbol=inputs["symbol"],
                         action=inputs["action"],
@@ -267,6 +287,7 @@ class TradingAgent:
                         order_type=inputs["order_type"],
                         limit_price=inputs.get("limit_price"),
                         order_id=result["order_id"],
+                        actual_fill_price=result.get("actual_fill_price"),
                     )
                 return result
             elif name == "cancel_order":
