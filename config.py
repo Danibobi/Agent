@@ -13,3 +13,6 @@ IB_CLIENT_ID: int = int(os.getenv("IB_CLIENT_ID", "1"))
 WATCH_LIST: list[str] = [s.strip() for s in os.getenv("WATCH_LIST", "AAPL,MSFT,GOOGL,AMZN,NVDA").split(",")]
 AGENT_INTERVAL_SECONDS: int = int(os.getenv("AGENT_INTERVAL_SECONDS", "300"))
 MAX_POSITION_SIZE_PCT: float = float(os.getenv("MAX_POSITION_SIZE_PCT", "0.1"))
+
+TELEGRAM_BOT_TOKEN: str | None = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID: str | None = os.getenv("TELEGRAM_CHAT_ID")

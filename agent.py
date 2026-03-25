@@ -10,6 +10,7 @@ import config
 import data as market_data
 from broker import IBBroker
 from performance import PerformanceTracker
+from telegram_notifier import TelegramNotifier
 
 logger = logging.getLogger(__name__)
 
@@ -143,9 +144,10 @@ When you are done making all decisions and have executed all intended orders, st
 
 
 class TradingAgent:
-    def __init__(self, broker: IBBroker, tracker: PerformanceTracker):
+    def __init__(self, broker: IBBroker, tracker: PerformanceTracker, notifier: TelegramNotifier):
         self.broker = broker
         self.tracker = tracker
+        self.notifier = notifier
         self.client = anthropic.Anthropic(api_key=config.ANTHROPIC_API_KEY)
 
     def run_cycle(self):
@@ -232,8 +234,17 @@ class TradingAgent:
                 result = self._dispatch_tool(tool_name, tool_input)
                 logger.info(f"Tool result: {json.dumps(result)}")
 
-                # Track placed orders for the activity log
+                # Track placed orders and notify on successful placement
                 if tool_name == "place_order" and "error" not in result:
+                    self.notifier.notify_trade(
+                        action=tool_input.get("action"),
+                        symbol=tool_input.get("symbol"),
+                        quantity=tool_input.get("quantity"),
+                        order_type=tool_input.get("order_type"),
+                        price=tool_input.get("limit_price") or result.get("actual_fill_price"),
+                        status=result.get("status", "Submitted"),
+                        paper=config.PAPER_TRADING,
+                    )
                     cycle_orders.append({
                         "symbol": tool_input.get("symbol"),
                         "action": tool_input.get("action"),
@@ -255,6 +266,9 @@ class TradingAgent:
 
         # Persist cycle activity to daily_log.json
         self.tracker.record_cycle_log(cycle_decisions, cycle_orders)
+        latest_snapshot = self.tracker._data["snapshots"][-1] if self.tracker._data["snapshots"] else None
+        net_liq = latest_snapshot.get("net_liquidation") if latest_snapshot else None
+        self.notifier.notify_cycle_complete(trade_count=len(cycle_orders), net_liq=net_liq)
         logger.info("--- Agent cycle complete ---")
 
     def _dispatch_tool(self, name: str, inputs: dict) -> dict:

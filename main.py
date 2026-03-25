@@ -9,6 +9,7 @@ import config
 from broker import IBBroker
 from agent import TradingAgent
 from performance import PerformanceTracker
+from telegram_notifier import TelegramNotifier
 
 _rot = logging.handlers.RotatingFileHandler(
     "trading_agent.log", maxBytes=10 * 1024 * 1024, backupCount=7
@@ -35,8 +36,15 @@ def main():
     broker = IBBroker()
     broker.connect()
 
+    notifier = TelegramNotifier(config.TELEGRAM_BOT_TOKEN, config.TELEGRAM_CHAT_ID)
+    notifier.notify_startup(
+        watchlist=config.WATCH_LIST,
+        mode_label="PAPER TRADING" if config.PAPER_TRADING else "LIVE",
+        interval_sec=config.AGENT_INTERVAL_SECONDS,
+    )
+
     tracker = PerformanceTracker()
-    agent = TradingAgent(broker, tracker)
+    agent = TradingAgent(broker, tracker, notifier)
 
     try:
         while True:
@@ -46,6 +54,7 @@ def main():
                 raise
             except Exception as e:
                 logger.error(f"Agent cycle failed: {e}", exc_info=True)
+                notifier.notify_error(str(e))
 
             logger.info(f"Sleeping {config.AGENT_INTERVAL_SECONDS}s until next cycle...")
             time.sleep(config.AGENT_INTERVAL_SECONDS)
